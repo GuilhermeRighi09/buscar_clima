@@ -1,19 +1,31 @@
 import os
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 
 def fahrenheit_to_celsius(temp):
-    return round((temp - 32) / 1.8, 2) if temp is not None else None
+    if temp is not None:
+        celsius = (temp - 32) / 1.8
+        return round(celsius, 2)
+    return None
 
 
 def mph_to_kmph(v_mph):
-    return round(v_mph * 1.609, 2) if v_mph is not None else None
+    if v_mph is not None:
+        v_kmph = v_mph * 1.609
+        return round(v_kmph, 2)
+    return None
 
 
 def transformar_dados_clima(dados_clima):
     clima_atual = dados_clima.get('currentConditions', {})
-    hoje = dados_clima.get('days', [])[0]
+    dias = dados_clima.get('days', [])
+
+    hoje = dias[0] if dias else {}
 
     dados_processados = {
         "data": hoje.get('datetime'),
@@ -28,7 +40,7 @@ def transformar_dados_clima(dados_clima):
         "previsao": []
     }
 
-    for dia in dados_clima.get('days', [])[:7]:
+    for dia in dias[:7]:
         dados_processados['previsao'].append({
             "data": datetime.strptime(dia['datetime'], "%Y-%m-%d").strftime('%d/%m/%Y'),
             "temperatura_max": fahrenheit_to_celsius(dia.get('tempmax')),
@@ -43,11 +55,34 @@ def buscar_clima_por_cidade(cidade):
     base_url = os.getenv('BASE_URL_VISUAL_CROSSING')
     api_key = os.getenv('VISUAL_CROSSING_API_KEY')
 
+    if not base_url or not api_key:
+        return {
+            "error": True,
+            "message": "Erro: Variáveis de ambiente BASE_URL ou API_KEY não configuradas."
+        }
+
+    if not base_url.endswith('/'):
+        base_url += '/'
+
     url = f"{base_url}{cidade}?key={api_key}&unitGroup=us&include=days,current"
 
     try:
+        print(f"--- Solicitando clima para: {cidade} ---")
+        print(f"URL: {url}")
+
         response = requests.get(url, timeout=10)
+
         response.raise_for_status()
-        return {"error": False, "data": transformar_dados_clima(response.json())}
+
+        dados_brutos = response.json()
+        return {
+            "error": False,
+            "data": transformar_dados_clima(dados_brutos)
+        }
+
+    except requests.exceptions.HTTPError as http_err:
+        return {"error": True, "message": f"Erro na API (Status {response.status_code}): {http_err}"}
+    except requests.exceptions.ConnectionError:
+        return {"error": True, "message": "Erro de conexão: Verifique a URL ou sua internet."}
     except Exception as e:
-        return {"error": True, "message": str(e)}
+        return {"error": True, "message": f"Erro inesperado: {str(e)}"}
